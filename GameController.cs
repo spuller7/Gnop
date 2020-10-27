@@ -1,24 +1,35 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using UnityEngine.Monetization;
+using UnityEngine.Advertisements;
 
-public class GameController : MonoBehaviour
+public class GameController : MonoBehaviour, IUnityAdsListener
 {
     public static GameController script;
 
-    private string playstore_id = "3068591";
-    private string appstore_id = "3068590";
+    private string playstore_id = "3549823";
+    private string appstore_id = "3549822";
     public bool isPlayStore;
     public bool isTest;
 
+    public enum GameMode {Classic, Chaos, Impossible, Unfair}
+
+    GameMode gameMode = GameMode.Classic;
+
     public bool hasContinued = false;
     public int adCounter = 1;
-    public int gamesNeededForAd = 2;
-    public int highscore;
+    public int gamesNeededForAd = 3;
+    private int highscore;
 
     public bool noAds = false;
+    public bool unlockedChaos = false;
+    public bool unlockedImpossible = false;
+    public bool unlockedUnfair = false;
+
+    public float speed = 0f;
+    public int score = 0;
+    public bool isContinue = false;
 
     private void Awake()
     {
@@ -27,98 +38,105 @@ public class GameController : MonoBehaviour
             DontDestroyOnLoad(gameObject);
             script = this;
         }
-        else if(script != this)
+        else if (script != this)
         {
             Destroy(gameObject);
         }
 
         highscore = PlayerPrefs.GetInt("HighScore", 0);
-        //Screen.SetResolution(1200, 800, false);
+        UpdateHighScore(highscore);
+        //Screen.SetResolution(1024, 1280, false);
     }
 
     private void Start()
     {
         //Initialize IAP
         IAPManager.Instance.InitializeIAPManager(InitializeResultCallback);
-        IAPManager.Instance.RestorePurchases(ProductRestoredCallback);
+        Restore();
 
         InitialiazeMonetization();
     }
 
-    private void InitialiazeMonetization()
+    public void Restore()
     {
-        if(isPlayStore)
-        {
-            Monetization.Initialize(playstore_id, isTest);
-            return;
-        }
-        Monetization.Initialize(appstore_id , isTest);
+        IAPManager.Instance.RestorePurchases(ProductRestoredCallback);
     }
 
-    public void playGame()
+    private void InitialiazeMonetization()
     {
+        Advertisement.AddListener(this);
+        if (isPlayStore)
+        {
+            Advertisement.Initialize(playstore_id, isTest);
+            return;
+        }
+        Advertisement.Initialize(appstore_id, isTest);
+    }
+
+    public void PlayGame(GameMode mode)
+    {
+        gameMode = mode;
+        highscore = GetHighScore();
         SceneManager.LoadScene("Main");
     }
 
-    public void ShowAd(int score)
+    public void ShowAd()
     {
         if (!noAds)
         {
             if (adCounter >= gamesNeededForAd)
             {
-                if (Monetization.IsReady("video"))
-                {
-                    ShowAdPlacementContent videoAd = null;
-                    videoAd = Monetization.GetPlacementContent("video") as ShowAdPlacementContent;
+                int rand_show = Random.Range(1,4);
 
-                    if (videoAd != null)
-                    {
-                        videoAd.Show();
-                    }
-                }
-
-                adCounter = 1;
-                if (gamesNeededForAd == 2)
+                if (rand_show != 1)
                 {
-                    gamesNeededForAd = 3;
+                    Advertisement.Show();
+
+                    adCounter = 0;
                 }
-                else { gamesNeededForAd = 2; }
             }
             else
             {
                 adCounter++;
             }
 
-            GameObject.Find("Game Manager").GetComponent<GameManager>().waitingForAd = false;
+            //GameObject.Find("Game Manager").GetComponent<GameManager>().waitingForAd = false;
         }
     }
 
     public void ShowRewardedAd()
     {
-        if (Monetization.IsReady("rewardedVideo"))
-        {
-            ShowAdPlacementContent rewardedVideoAd = null;
-            rewardedVideoAd = Monetization.GetPlacementContent("rewardedVideo") as ShowAdPlacementContent;
+        Advertisement.Show("rewardedVideo");
+    }
 
-            if (rewardedVideoAd != null)
-            {
-                rewardedVideoAd.Show(HandleShowResult);
-            }
+    public void OnUnityAdsDidFinish(string placementId, ShowResult showResult)
+    {
+        // Define conditional logic for each ad completion status:
+        if (showResult == ShowResult.Finished && placementId == "rewardedVideo")
+        {
+            hasContinued = true;
+            GameObject.Find("Game Manager").GetComponent<GameManager>().SuccessfulContinue();
         }
     }
 
-    private void HandleShowResult(ShowResult result)
+    public void OnUnityAdsReady(string placementId)
     {
-        switch (result)
+        // If the ready Placement is rewarded, activate the button: 
+        if (placementId == "rewardedVideo")
         {
-            case ShowResult.Finished:
-                hasContinued = true;
-                GameObject.Find("Game Manager").GetComponent<GameManager>().SuccessfulContinue();
-                break;
-            default:
-                GameObject.Find("Game Manager").GetComponent<GameManager>().PlayAgain();
-                break;
+            //myButton.interactable = true;
         }
+    }
+
+    public void OnUnityAdsDidError(string message)
+    {
+        // Log the error.
+        Debug.Log(message);
+    }
+
+    public void OnUnityAdsDidStart(string placementId)
+    {
+        // Optional actions to take when the end-users triggers an ad.
     }
 
     public bool CanContinue(int score)
@@ -139,8 +157,47 @@ public class GameController : MonoBehaviour
 
     public void UpdateHighScore(int score)
     {
-        PlayerPrefs.SetInt("HighScore", score);
+        if (gameMode == GameMode.Chaos)
+        {
+            PlayerPrefs.SetInt("ChaosHighScore", score);
+        }
+        else if (gameMode == GameMode.Impossible)
+        {
+            PlayerPrefs.SetInt("ImpossibleHighScore", score);
+        }
+        else if (gameMode == GameMode.Unfair)
+        {
+            PlayerPrefs.SetInt("UnfairHighScore", score);
+        }
+        else
+        {
+            PlayerPrefs.SetInt("HighScore", score);
+        }
+        
         highscore = score;
+        CloudOnceServices.instance.SubmitScore(highscore);
+    }
+
+    public int GetHighScore()
+    {
+        if (gameMode == GameMode.Classic)
+        {
+            return PlayerPrefs.GetInt("HighScore", 0);
+        }
+        else if (gameMode == GameMode.Chaos)
+        {
+            return PlayerPrefs.GetInt("ChaosHighScore", 0);
+        }
+        else if (gameMode == GameMode.Impossible)
+        {
+            return PlayerPrefs.GetInt("ImpossibleHighScore", 0);
+        }
+        else if (gameMode == GameMode.Unfair)
+        {
+            return PlayerPrefs.GetInt("UnfairHighScore", 0);
+        }
+
+        return 0;
     }
 
     private void InitializeResultCallback(IAPOperationStatus status, string message, List<StoreProduct> shopProducts)
@@ -151,16 +208,30 @@ public class GameController : MonoBehaviour
             //loop through all products
             for (int i = 0; i < shopProducts.Count; i++)
             {
-                if (shopProducts[i].productName == "RemoveAds")
+                //if active variable is true, means that user had bought that product
+                //so enable access
+                if (shopProducts[i].active)
                 {
-                    //if active variable is true, means that user had bought that product
-                    //so enable access
-                    if (shopProducts[i].active)
+                    if (shopProducts[i].productName == "RemoveAds")
                     {
                         noAds = true;
                     }
+                    if (shopProducts[i].productName == "UnlockChaos")
+                    {
+                        unlockedChaos = true;
+                    }
+                    if (shopProducts[i].productName == "UnlockImpossible")
+                    {
+                        unlockedImpossible = true;
+                    }
+                    if (shopProducts[i].productName == "UnlockUnfair")
+                    {
+                        unlockedUnfair = true;
+                    }
                 }
             }
+
+            GameObject.Find("Game Mode Manager").GetComponent<GameModeManager>().UpdateGameModeDisplay();
         }
     }
 
@@ -169,9 +240,15 @@ public class GameController : MonoBehaviour
         if (status == IAPOperationStatus.Success)
         {
             if (product.productName == "RemoveAds")
-            {
                 noAds = true;
-            }
+            else if (product.productName == "UnlockChaos")
+                unlockedChaos = true;
+            else if (product.productName == "UnlockImpossible")
+                unlockedImpossible = true;
+            else if (product.productName == "UnlockUnfair")
+                unlockedUnfair = true;
+
+            GameObject.Find("Game Mode Manager").GetComponent<GameModeManager>().UpdateGameModeDisplay();
         }
     }
 
@@ -180,12 +257,43 @@ public class GameController : MonoBehaviour
         IAPManager.Instance.BuyProduct(ShopProductNames.RemoveAds, ProductBoughtCallback);
     }
 
+    public void BuyGameMode(GameMode gameM)
+    {
+        if (gameM == GameMode.Chaos)
+            IAPManager.Instance.BuyProduct(ShopProductNames.UnlockChaos, ProductBoughtCallback);
+        else if (gameM == GameMode.Impossible)
+            IAPManager.Instance.BuyProduct(ShopProductNames.UnlockImpossible, ProductBoughtCallback);
+        else if (gameM == GameMode.Unfair)
+            IAPManager.Instance.BuyProduct(ShopProductNames.UnlockUnfair, ProductBoughtCallback);
+    }
+
     private void ProductBoughtCallback(IAPOperationStatus status, string message, StoreProduct product)
     {
         if (status == IAPOperationStatus.Success)
         {
             if (product.productName == "RemoveAds")
+            {
                 noAds = true;
+                return;
+            }
+            else if (product.productName == "UnlockChaos")
+                unlockedChaos = true;
+            else if (product.productName == "UnlockImpossible")
+                unlockedImpossible = true;
+            else if (product.productName == "UnlockUnfair")
+                unlockedUnfair = true;
+            
+            GameObject.Find("Game Mode Manager").GetComponent<GameModeManager>().UpdateGameModeDisplay();
         }
+    }
+
+    public GameMode GetGameMode()
+    {
+        return gameMode;
+    }
+
+    public void TestPurchase()
+    {
+        IAPManager.Instance.BuyProduct(ShopProductNames.Test, ProductBoughtCallback);
     }
 }

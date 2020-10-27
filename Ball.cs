@@ -7,7 +7,7 @@ using UnityEngine;
 public class Ball : MonoBehaviour {
 
     [SerializeField]
-    float speed;
+    private float speed;
 
     [SerializeField]
     private GameObject paddleHitParticles;
@@ -25,6 +25,7 @@ public class Ball : MonoBehaviour {
 
     Vector2 direction;
     private GameManager gameManager;
+    private bool isFake = false;
     private bool isPlaying = true;
 
     private CameraShake camShake;
@@ -35,22 +36,25 @@ public class Ball : MonoBehaviour {
         float angle = Random.Range(Screen.height, Screen.height / 5 + Screen.height / 2);
 
         direction = Vector3.Normalize(Camera.main.ScreenToWorldPoint(new Vector3(Screen.width, angle, 0)) - transform.position);
-        direction = direction.normalized;
+        direction = -direction.normalized;
 
-        int dir = Random.Range(1, 3);
-        if (dir == 1)
+        if (GameController.script.GetGameMode() != GameController.GameMode.Unfair)
         {
-            direction = -direction;
+            int dir = Random.Range(1, 3);
+            if (dir == 1)
+            {
+                direction = -direction;
+            }
         }
     }
 	
 	void Update ()
     {
+        speed = gameManager.GetSpeed();
         transform.Translate(direction * speed * Time.deltaTime);
 
         if (isPlaying)
         {
-
             if (gameObject.transform.position.y > GameManager.topRight.y ||
                 gameObject.transform.position.y<GameManager.bottomLeft.y ||
                 gameObject.transform.position.x> GameManager.topRight.x ||
@@ -62,12 +66,55 @@ public class Ball : MonoBehaviour {
         }
     }
 
+    private Vector2 left = new Vector2(1f, 0f);
+    private Vector2 right = new Vector2(-1f, 0f);
+    private Vector2 top = new Vector2(0f, -1f);
+    private Vector2 bottom = new Vector2(0f, 1f);
+    private float wt = 0.15f;
+
     void OnCollisionEnter2D(Collision2D collision)
     {
         if (collision.gameObject.tag == "Paddle")
         {
-            direction = Vector2.Reflect(direction, collision.GetContact(0).normal);
+            Vector2 paddleCollision = collision.GetContact(0).normal;
+            direction = Vector2.Reflect(direction, paddleCollision);
+            direction = direction.normalized;
 
+            if (GameController.script.GetGameMode() == GameController.GameMode.Impossible)
+            {
+
+            }
+
+            wt = Random.Range(0.11f, 0.15f);
+
+            int paddleDirection = gameManager.GetDirection();
+            // Paddle is moving counter clockwise
+            if (paddleDirection == 1)
+            {
+                if (paddleCollision == left)
+                    direction = new Vector2(direction.x, direction.y - ((direction.y + 1) * wt));
+                else if (paddleCollision == bottom)
+                    direction = new Vector2(direction.x + ((1 - direction.x) * wt), direction.y);
+                else if (paddleCollision == right)
+                    direction = new Vector2(direction.x, direction.y + ((1 - direction.y) * wt));
+                else if (paddleCollision == top)
+                    direction = new Vector2(direction.x - ((direction.x + 1) * wt), direction.y);
+            }
+            // Paddle is moving clockwise
+            else if (paddleDirection == -1)
+            {
+                if (paddleCollision == left)
+                    direction = new Vector2(direction.x, direction.y + ((1 - direction.y) * wt));
+                else if (paddleCollision == bottom)
+                    direction = new Vector2(direction.x - ((direction.x + 1) * wt), direction.y);
+                else if (paddleCollision == right)
+                    direction = new Vector2(direction.x, direction.y - ((direction.y + 1) * wt));
+                else if (paddleCollision == top)
+                    direction = new Vector2(direction.x + ((1 - direction.x) * wt), direction.y);
+            }
+
+            direction = direction.normalized;
+            
             Color curColor = this.gameObject.GetComponent<SpriteRenderer>().color;
             collision.gameObject.GetComponent<LineRenderer>().startColor = curColor;
             collision.gameObject.GetComponent<LineRenderer>().endColor = curColor;
@@ -86,6 +133,7 @@ public class Ball : MonoBehaviour {
 
             var partSystem = part.GetComponent<ParticleSystem>().main;
             partSystem.startColor = curColor;
+            
             PlayCollisionSound();
             gameManager.EarnPoint();
         }
@@ -106,15 +154,25 @@ public class Ball : MonoBehaviour {
         }
     }
 
-    public void AssignGameManager(GameManager gameManager)
+    private void OnTriggerEnter2D(Collider2D collision)
     {
+        if (collision.gameObject.tag == "Add Ball")
+        {
+            gameManager.HitPowerup(collision.gameObject.GetComponent<Powerup>());
+            Destroy(collision.gameObject);
+        }
+    }
+
+    public void Init(GameManager gameManager, bool isFake = false)
+    {
+        this.isFake = isFake;
         this.gameManager = gameManager;
     }
 
     private IEnumerator CallGameOver()
     {
         yield return new WaitForSeconds(0.75f);
-        gameManager.DeleteBall(gameObject);
+        gameManager.DeleteBall(gameObject, isFake);
     }
 
     private void PlayCollisionSound()

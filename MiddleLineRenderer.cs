@@ -9,12 +9,14 @@ public class MiddleLineRenderer : MonoBehaviour {
 
     enum Shape
     {
-        Circle, Square, Hexagon, HorizontalLine, VerticalLine, Empty
+        VerticalLine, HorizontalLine, RandomLine, Circle, Square, Empty
     }
 
     Shape currentShape = Shape.Empty;
     Shape currentStatus = Shape.Empty;
     Shape nextShape;
+
+    private int numTimes = 0;
 
     private LineRenderer line;
     EdgeCollider2D edgeCollider;
@@ -32,7 +34,11 @@ public class MiddleLineRenderer : MonoBehaviour {
     [SerializeField]
     private GameObject explodeShapeEffect;
 
-    public GameManager gm;
+    [SerializeField]
+    private Color disabledColor;
+
+    [SerializeField]
+    private Color enabledColor;
 
     private int rotationDirection = 1;
 
@@ -46,16 +52,24 @@ public class MiddleLineRenderer : MonoBehaviour {
         DisableLine();
         nextShape = GetNextShape();
 
-        float screenWidth = Vector3.Distance(Camera.main.ScreenToWorldPoint(new Vector3(Screen.width, 0, 1)), Camera.main.ScreenToWorldPoint(new Vector3(0, 0, 1)));
+        float screenWidth = Vector3.Distance(Camera.main.ScreenToWorldPoint(new Vector3(Screen.safeArea.xMax, 0, 1)), Camera.main.ScreenToWorldPoint(new Vector3(Screen.safeArea.x, 0, 1)));
         maxRadius = screenWidth * percentOfScreen;
 
-        topLeft = Camera.main.ScreenToWorldPoint(new Vector3(0, Screen.height, 1));
-        topLeft += Vector3.right * 0.5f;
-        topLeft += Vector3.down * 0.5f;
+        if (GameController.script.GetGameMode() == GameController.GameMode.Unfair || GameController.script.GetGameMode() == GameController.GameMode.Impossible)
+            topLeft = Camera.main.ScreenToWorldPoint(new Vector3(Screen.safeArea.x + (Screen.safeArea.xMax / 4), Screen.safeArea.yMax - (Screen.safeArea.yMax / 4), 1));
+        else
+            topLeft = Camera.main.ScreenToWorldPoint(new Vector3(Screen.safeArea.x, Screen.safeArea.yMax, 1));
 
-        bottomRight = Camera.main.ScreenToWorldPoint(new Vector3(Screen.width, 0, 1));
-        bottomRight += Vector3.left * 0.5f;
-        bottomRight += Vector3.up * 0.5f;
+        topLeft += Vector3.right * 0.45f;
+        topLeft += Vector3.down * 0.45f;
+
+        if (GameController.script.GetGameMode() == GameController.GameMode.Unfair || GameController.script.GetGameMode() == GameController.GameMode.Impossible)
+            bottomRight = Camera.main.ScreenToWorldPoint(new Vector3(Screen.safeArea.xMax - (Screen.safeArea.xMax / 4), Screen.safeArea.y + (Screen.safeArea.yMax / 4), 1));
+        else
+            bottomRight = Camera.main.ScreenToWorldPoint(new Vector3(Screen.safeArea.xMax, Screen.safeArea.y, 1));
+
+        bottomRight += Vector3.left * 0.45f;
+        bottomRight += Vector3.up * 0.45f;
 
         line.positionCount = 2;
     }
@@ -84,25 +98,53 @@ public class MiddleLineRenderer : MonoBehaviour {
         points.Clear();
         edgeColliderPoints.Clear();
         line.positionCount = 0;
+
+        this.gameObject.GetComponent<LineRenderer>().startColor = disabledColor;
+        this.gameObject.GetComponent<LineRenderer>().endColor = disabledColor;
     }
 
-    private void EnableLine()
+    private void DrawLine()
     {
         line.enabled = true;
+        numTimes++;
+    }
+
+    // Make line interactable with the ball
+    public void EnableLine()
+    {
+        this.gameObject.GetComponent<LineRenderer>().startColor = enabledColor;
+        this.gameObject.GetComponent<LineRenderer>().endColor = enabledColor;
         edgeCollider.enabled = true;
     }
 
-    public bool DrawShape()
+    public bool DrawShape(bool gameEnded = false)
     {
         if (currentStatus != Shape.Empty)
         {
-            DestroyShape();
+            DestroyShape(gameEnded);
             nextShape = GetNextShape();
             return false;
         }
+        else if (GameController.script.GetGameMode() == GameController.GameMode.Impossible)
+        {
+            DrawLine();
+            currentShape = Shape.RandomLine;
+            currentStatus = Shape.RandomLine;
+            StartCoroutine(DrawRandomLine());
+            return true;
+        }
+        else if (GameController.script.GetGameMode() == GameController.GameMode.Unfair)
+        {
+            DrawLine();
+            nextShape = Shape.RandomLine;
+            currentShape = Shape.VerticalLine;
+            currentStatus = Shape.VerticalLine;
+            StartCoroutine(DrawRandomLine());
+            return true;
+        }
         else
         {
-            EnableLine();
+            DrawLine();
 
             if (nextShape == Shape.Square)
             {
@@ -110,12 +152,12 @@ public class MiddleLineRenderer : MonoBehaviour {
                 currentStatus = Shape.Square;
                 DrawSquare();
             }
-            else if (nextShape == Shape.Hexagon)
+           /* else if (nextShape == Shape.Hexagon)
             {
                 currentShape = Shape.Hexagon;
                 currentStatus = Shape.Hexagon;
                 DrawHexagon();
-            }
+            }*/
             else if (nextShape == Shape.HorizontalLine)
             {
                 currentShape = Shape.HorizontalLine;
@@ -128,6 +170,12 @@ public class MiddleLineRenderer : MonoBehaviour {
                 currentStatus = Shape.VerticalLine;
                 StartCoroutine(DrawVerticalLine());
             }
+            else if (nextShape == Shape.RandomLine)
+            {
+                currentShape = Shape.VerticalLine;
+                currentStatus = Shape.VerticalLine;
+                StartCoroutine(DrawRandomLine());
+            }
             else
             {
                 currentShape = Shape.Circle;
@@ -139,7 +187,7 @@ public class MiddleLineRenderer : MonoBehaviour {
         }
     }
 
-    public void DestroyShape()
+    public void DestroyShape(bool gameEnded = false)
     {
         if (currentStatus != Shape.Empty)
         {
@@ -168,11 +216,16 @@ public class MiddleLineRenderer : MonoBehaviour {
                 transform.rotation = Quaternion.identity;
             }
         }
+
+        if (GameController.script.GetGameMode() == GameController.GameMode.Impossible && !gameEnded)
+        {
+            DrawShape();
+        }
     }
 
     public IEnumerator DestroyLine()
     {
-        int lineSegments = 32;
+        int lineSegments = 24;
 
         Vector3 center = new Vector3(0, 0, -9);
 
@@ -203,7 +256,7 @@ public class MiddleLineRenderer : MonoBehaviour {
 
     private void DrawCircle()
     {
-        StartCoroutine(DrawPolygon(32));
+        StartCoroutine(DrawPolygon(24));
     }
 
     private void DrawTriangle()
@@ -225,7 +278,7 @@ public class MiddleLineRenderer : MonoBehaviour {
     private IEnumerator DrawPolygon(int numVertices)
     {
         int segments = numVertices;
-        int lineSegments = 32 / numVertices;
+        int lineSegments = 24 / numVertices;
         List<Vector3> vertices = new List<Vector3>();
 
         vertices.Add(new Vector3(0, maxRadius, -9));
@@ -257,7 +310,7 @@ public class MiddleLineRenderer : MonoBehaviour {
                     AddNextPosition(points[points.Count - 1] + (directionVector * lineSegmentDistance));
                 }
 
-                if (i % 4 == 0)
+                if (i % 6 == 0)
                 {
                     explosionPoints.Add(j);
                 }
@@ -266,7 +319,7 @@ public class MiddleLineRenderer : MonoBehaviour {
             }
         }
 
-        Rotate();
+        //Rotate();
     }
 
     private void AddNextPosition(Vector3 nextPosition)
@@ -283,7 +336,7 @@ public class MiddleLineRenderer : MonoBehaviour {
 
     private IEnumerator DrawHorizontalLine()
     {
-        int lineSegments = 32;
+        int lineSegments = 24;
 
         Vector3 leftPoint = new Vector3(topLeft.x, 0, -9);
         Vector3 rightPoint = new Vector3(bottomRight.x, 0, -9);
@@ -317,7 +370,7 @@ public class MiddleLineRenderer : MonoBehaviour {
 
     private IEnumerator DrawVerticalLine()
     {
-        int lineSegments = 32;
+        int lineSegments = 24;
 
         Vector3 topPoint = new Vector3(0, topLeft.y, -9);
         Vector3 bottomPoint = new Vector3(0, bottomRight.y, -9);
@@ -349,8 +402,62 @@ public class MiddleLineRenderer : MonoBehaviour {
         }
     }
 
+    private IEnumerator DrawRandomLine()
+    {
+        int lineSegments = 24;
+
+        Vector3 topPoint = new Vector3();
+        Vector3 bottomPoint = new Vector3();
+
+        int side = Random.Range(0, 2);
+
+        if (side == 1)
+        {
+            float yVal = Random.Range(topLeft.y, bottomRight.y);
+            topPoint = new Vector3(topLeft.x, yVal, -9);
+            bottomPoint = new Vector3(bottomRight.x, -yVal, -9);
+        }
+        else
+        {
+            float xVal = Random.Range(topLeft.x, bottomRight.x);
+            topPoint = new Vector3(xVal, topLeft.y, -9);
+            bottomPoint = new Vector3(-xVal, bottomRight.y, -9);
+        }
+
+        Vector3 center = new Vector3(0, 0, -9);
+
+        Vector3 directionVectorTop = (topPoint - center).normalized;
+        Vector3 directionVectorBottom = (bottomPoint - center).normalized;
+
+        float lineRadius = Vector3.Distance(topPoint, bottomPoint);
+        float incrementDistance = lineRadius / lineSegments;
+
+        AddNextPosition(new Vector3(0, 0, -9));
+        AddNextPosition(new Vector3(0, 0, -9));
+
+        //animated line generation
+        for (int i = 0; i < lineSegments / 2; i++)
+        {
+            points[0] = points[0] + (directionVectorTop * incrementDistance);
+            points[1] = points[1] + (directionVectorBottom * incrementDistance);
+
+            edgeColliderPoints[0] = points[0];
+            edgeColliderPoints[1] = points[1];
+
+            line.SetPositions(points.ToArray());
+            edgeCollider.points = edgeColliderPoints.ToArray();
+
+            yield return new WaitForSeconds(0.01f);
+        }
+    }
+
     private Shape GetNextShape()
     {
+        if (numTimes < 5)
+        {
+            return (Shape)numTimes;
+        }
+
         Shape nextShape = (Shape)Random.Range(0, 5);
 
         if (nextShape == currentShape)

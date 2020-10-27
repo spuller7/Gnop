@@ -34,7 +34,7 @@ public class UIManager : MonoBehaviour {
     public Animator scoreAnimator;
 
     [SerializeField]
-    private Button canContinueButton;
+    private GameObject canContinueButton;
 
     [SerializeField]
     private Text continueText;
@@ -47,6 +47,12 @@ public class UIManager : MonoBehaviour {
 
     [SerializeField]
     private Text noAdsText;
+
+    [SerializeField]
+    private Button leaderboardButton;
+
+    [SerializeField]
+    private Text leaderboardsText;
 
     [SerializeField]
     private Color activeText;
@@ -70,6 +76,20 @@ public class UIManager : MonoBehaviour {
     [SerializeField]
     private ParticleSystem backgroundEmiiter;
 
+    [Space(10)]
+
+    [SerializeField]
+    private GameObject[] cornerShapes;
+
+    [SerializeField]
+    private GameObject safeZoneBuffers;
+
+    [SerializeField]
+    private GameObject tapToStart;
+
+    [SerializeField]
+    private Text tapToStartText;
+
     private int bestScoreVal;
 
     private void Awake()
@@ -90,8 +110,9 @@ public class UIManager : MonoBehaviour {
     {
         gameOver.SetActive(false);
         newHighScore.SetActive(false);
+        tapToStart.SetActive(true);
 
-        bestScoreVal = GameController.script.highscore;
+        bestScoreVal = GameController.script.GetHighScore();
         highScore.text = bestScoreVal.ToString();
     }
 
@@ -104,24 +125,35 @@ public class UIManager : MonoBehaviour {
     {
         if (GameController.script.CanContinue(score))
         {
-            canContinueButton.interactable = true;
-            continueText.color = activeText;
+            canContinueButton.SetActive(true);
         }
         else
         {
-            canContinueButton.interactable = false;
-            continueText.color = inactiveText;
+            canContinueButton.SetActive(false);
         }
 
         if (GameController.script.noAds)
         {
             noAdsButton.interactable = false;
-            noAdsText.color = inactiveText;
+            noAdsText.enabled = false;
         }
         else
         {
             noAdsButton.interactable = true;
             noAdsText.color = activeText;
+        }
+
+        if (CloudOnceServices.instance.IsConnected())
+        {
+            leaderboardButton.interactable = true;
+            leaderboardsText.text = "Leaderboards";
+            leaderboardsText.color = activeText;
+        }
+        else
+        {
+            leaderboardButton.interactable = false;
+            leaderboardsText.text = "Sign In Required";
+            leaderboardsText.color = inactiveText;
         }
 
         gameOver.SetActive(true);
@@ -133,6 +165,8 @@ public class UIManager : MonoBehaviour {
 
     public void ContinueGame()
     {
+        tapToStartText.text = "Tap To Continue";
+        canContinueButton.SetActive(false);
         canvasAnimator.SetBool("isPlaying", true);
         scoreAnimator.SetBool("isContinue", true);
     }
@@ -157,6 +191,7 @@ public class UIManager : MonoBehaviour {
 
     public void FadeInScore()
     {
+        tapToStart.SetActive(false);
         scoreAnimator.SetBool("isContinue", false);
         scoreAnimator.SetBool("isVisible", true);
         ChangeBackgroundTexture();
